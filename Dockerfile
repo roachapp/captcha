@@ -1,3 +1,3 @@
 FROM scratch
-COPY bin/captcha.go /captcha
-ENTRYPOINT ["captcha"]
+COPY bin/captcha /captcha
+ENTRYPOINT ["/captcha"]
