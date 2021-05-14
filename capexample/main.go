@@ -17,6 +17,7 @@ func serve(w http.ResponseWriter, r *http.Request, id string) error {
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
+	w.Header().Set("captcha-ID", id)
 
 	var content bytes.Buffer
 	w.Header().Set("Content-Type", "image/png")
