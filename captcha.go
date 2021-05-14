@@ -54,12 +54,12 @@ import (
 
 const (
 	// Default number of digits in captcha solution.
-	DefaultLen = 6
+	DefaultLen = 3
 	// The number of captchas created that triggers garbage collection used
 	// by default store.
 	CollectNum = 100
 	// Expiration time of captchas used by default store.
-	Expiration = 10 * time.Minute
+	Expiration = 1 * time.Minute
 )
 
 var (
@@ -111,18 +111,6 @@ func WriteImage(w io.Writer, id string, width, height int) error {
 		return ErrNotFound
 	}
 	_, err := NewImage(id, d, width, height).WriteTo(w)
-	return err
-}
-
-// WriteAudio writes WAV-encoded audio representation of the captcha with the
-// given id and the given language. If there are no sounds for the given
-// language, English is used.
-func WriteAudio(w io.Writer, id string, lang string) error {
-	d := globalStore.Get(id, false)
-	if d == nil {
-		return ErrNotFound
-	}
-	_, err := NewAudio(id, d, lang).WriteTo(w)
 	return err
 }
 

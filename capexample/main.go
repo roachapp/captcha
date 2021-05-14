@@ -62,8 +62,8 @@ func validateHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	http.Handle("/", tollbooth.LimitFuncHandler(tollbooth.NewLimiter(0.01, nil), getHandler))
-	http.Handle("/validate", tollbooth.LimitFuncHandler(tollbooth.NewLimiter(0.01, nil), validateHandler))
+	http.Handle("/", tollbooth.LimitFuncHandler(tollbooth.NewLimiter(0.02, nil), getHandler))
+	http.Handle("/validate", tollbooth.LimitFuncHandler(tollbooth.NewLimiter(0.02, nil), validateHandler))
 	log.Debugf("Captcha Server running on %s", "localhost:8666")
 
 	if err := http.ListenAndServe("localhost:8666", nil); err != nil {
