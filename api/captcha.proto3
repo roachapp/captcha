@@ -5,10 +5,9 @@ package api;
 option go_package = "../api";
 
 message User {
-  reserved 3 to 15;
+  reserved 2 to 15;
 
   string id = 1;
-  bool reload = 2;
 }
 
 message Challenge {
