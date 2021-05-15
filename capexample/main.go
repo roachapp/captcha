@@ -3,70 +3,100 @@ package main
 
 import (
 	"bytes"
-	"io"
-	"net/http"
+	"context"
+	"fmt"
+	"github.com/grpc-ecosystem/go-grpc-middleware"
+	"github.com/grpc-ecosystem/go-grpc-middleware/ratelimit"
+	log "github.com/sirupsen/logrus"
+	"golang.org/x/time/rate"
+	"google.golang.org/grpc"
+	"net"
 	"time"
 
-	"github.com/didip/tollbooth"
-	log "github.com/sirupsen/logrus"
-
 	"github.com/roachapp/captcha"
+	pb "github.com/roachapp/captcha/api"
 )
 
-func serve(w http.ResponseWriter, r *http.Request, id string) error {
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Expires", "0")
-	w.Header().Set("captcha-ID", id)
+const (
+	width = 160
+	height = 80
+)
+
+type captchaServer struct {
+	pb.UnimplementedCaptchaServer
+	context context.Context
+}
+
+func (srv captchaServer) Validate(ctx context.Context, sol *pb.Solution) (*pb.Status, error) {
+	if !captcha.VerifyString(sol.Id, sol.Code) {
+		return &pb.Status{
+			Code: 400,
+			Message: "try again :(",
+		}, nil
+	}
+	return &pb.Status{
+		Code: 200,
+		Message: "that went smoothly :)",
+	}, nil
+
+	// TODO send OK to backend servers containing users pubkey (pubkey = sol.Id)
+}
+
+func (srv captchaServer) Get(ctx context.Context, sol *pb.User) (*pb.Challenge, error) {
+	captchaID := captcha.New()
 
 	var content bytes.Buffer
-	w.Header().Set("Content-Type", "image/png")
-	if err := captcha.WriteImage(&content, id, 240, 80); err != nil {
-		log.Fatal(err)
-		return err
+
+	if err := captcha.WriteImage(&content, captchaID, width, height); err != nil {
+		log.Error(err)
+		return nil, err
 	}
 
-	http.ServeContent(w, r, id, time.Time{}, bytes.NewReader(content.Bytes()))
-	return nil
+	return &pb.Challenge{
+		Id: captchaID,
+		Width: width,
+		Height: height,
+		GrayPixels: content.Bytes(),
+	}, nil
 }
 
-func getHandler(w http.ResponseWriter, r *http.Request) {
-	id := captcha.New()
-
-	if r.FormValue("reload") != "" {
-		captcha.Reload(id)
-	}
-
-	if serve(w, r, id) == captcha.ErrNotFound {
-		http.NotFound(w, r)
-	}
+type rateLimiter struct {
+	rl *rate.Limiter
 }
 
-func validateHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+func (rl *rateLimiter) Limit() bool {
+	return rl.rl.Allow()
+}
 
-	captchaID := r.FormValue("id")
-	captchaSolution := r.FormValue("sol")
-
-	if !captcha.VerifyString(captchaID, captchaSolution) {
-		_, err := io.WriteString(w, "{\"message\": \"try again :(\", \"status\": 400}\n")
-		if err != nil {
-			log.Fatal(err)
-		}
-	} else {
-		_, err := io.WriteString(w, "{\"message\": \"that went smoothly :)\", \"status\": 200}\n")
-		if err != nil {
-			log.Fatal(err)
-		}
+func newServer() *grpc.Server {
+	limiter := &rateLimiter{
+		rl: rate.NewLimiter(rate.Every(time.Second * 30), 3), // note that a captcha's TTL is also 30 seconds
 	}
+
+	srv := grpc.NewServer(
+		grpc_middleware.WithUnaryServerChain(
+			ratelimit.UnaryServerInterceptor(limiter),
+		),
+	)
+	pb.RegisterCaptchaServer(srv, captchaServer{context: context.Background()})
+	return srv
 }
 
 func main() {
-	http.Handle("/", tollbooth.LimitFuncHandler(tollbooth.NewLimiter(0.02, nil), getHandler))
-	http.Handle("/validate", tollbooth.LimitFuncHandler(tollbooth.NewLimiter(0.02, nil), validateHandler))
-	log.Debugf("Captcha Server running on %s", "localhost:8666")
+	ip := "0.0.0.0"
+	port := 8666
+	ipPort := fmt.Sprintf(ip + ":%d", port)
 
-	if err := http.ListenAndServe("localhost:8666", nil); err != nil {
+	// grpc approach
+	conn, err := net.Listen("tcp", ipPort)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+
+	grpcServer := newServer()
+	log.Infof("Captcha Server running on %s", ipPort)
+
+	if err := grpcServer.Serve(conn); err != nil {
 		log.Fatal(err)
 	}
 }

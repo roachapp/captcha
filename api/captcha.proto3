@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package api;
+
+option go_package = "../api";
+
+message User {
+  reserved 3 to 15;
+
+  string id = 1;
+  bool reload = 2;
+}
+
+message Challenge {
+  reserved 5 to 15;
+
+  string id = 1;
+  int32 width = 2;
+  int32 height = 3;
+  bytes grayPixels = 4;
+}
+
+message Solution {
+  reserved 3 to 15;
+
+  string id = 1;
+  string code = 2;
+}
+
+message Status {
+  reserved 3 to 15;
+
+  int32 code = 1;
+  string message = 2;
+}
+
+service Captcha {
+  rpc Get (User) returns (Challenge) {}
+  rpc Validate (Solution) returns (Status) {}
+}
