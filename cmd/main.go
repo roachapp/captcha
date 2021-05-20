@@ -4,12 +4,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/roachapp/captcha/pkg"
+	"github.com/roachapp/captcha/pkg/captcha"
+	"github.com/roachapp/captcha/pkg/store"
 	log "github.com/sirupsen/logrus"
 	"net"
-	"os"
-
-	"github.com/jackc/pgconn"
+	"time"
 )
 
 func main() {
@@ -18,40 +17,22 @@ func main() {
 	ipPort := fmt.Sprintf(ip + ":%d", port)
 	ctx := context.Background()
 
-	// setup postgres database connection pool
-	pg := pkg.ConnectDB(ctx)
-	defer pg.Close()
-
-	// setup postgres event notifyer connection
-	pgNotifyer, err := pkg.PgNotifyer(ctx, pg)
-	if err != nil {
-		log.Fatalf("an error occured while establishing the event notifyer connection: %+v", err)
-		os.Exit(1)
+	// create captcha generator
+	captchaGenerator := &captcha.Generator{
+		DigitLen: 3,
+		Width: 160,
+		Height: 80,
+		CacheStore: store.NewCacheStore(100, 30 * time.Second),
+		PgStore:    store.NewPostgresStore(ctx),
 	}
 
-	defer pgNotifyer.Close(ctx)
-
-	notifyChan := make(chan *pgconn.Notification)
-
-	go func() {
-		// <-- upon SQL trigger, we notify the user of the events -->
-		msg, err := pgNotifyer.WaitForNotification(ctx) // this blocks
-		if err != nil {
-			log.Errorf("error occured while waiting for SQL trigger: %+v", err)
-		}
-
-		// notify user
-		notifyChan <- msg
-		log.Debug("SQL trigger: triggered eventsNotifyChannel")
-	}()
-
-	// grpc approach
+	// grpc connection
 	conn, err := net.Listen("tcp", ipPort)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	grpcServer := pkg.NewServer(ctx)
+	grpcServer := captcha.NewServer(ctx, captchaGenerator)
 	log.Infof("Captcha Server running on %s", ipPort)
 
 	if err := grpcServer.Serve(conn); err != nil {
